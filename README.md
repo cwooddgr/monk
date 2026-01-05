@@ -102,6 +102,8 @@ my-song/
 
 Reaper's `.rpp` format is human-readable text — an LLM can read and modify it directly.
 
+&copy; 2026 Charlie Wood
+
 ## License
 
 MIT
