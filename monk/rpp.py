@@ -25,6 +25,7 @@ class Track:
     index: int
     guid: str = field(default_factory=lambda: str(uuid.uuid4()))
     midi_items: list[MidiItem] = field(default_factory=list)
+    instrument_type: str = "synth"  # synth, bass, pad, drums
 
 
 class ReaperProject:
@@ -175,9 +176,9 @@ class ReaperProject:
             "    MAINSEND 1 0\n",
         ]
 
-        # Add ReaSynth if track has MIDI items
-        if add_synth and track.midi_items:
-            lines.extend(self._generate_reasynth_fx())
+        # Add instrument if track has MIDI items (skip drums - need user's drum plugin)
+        if add_synth and track.midi_items and track.instrument_type != "drums":
+            lines.extend(self._generate_reasynth_fx(track.instrument_type))
 
         # Add MIDI items
         for item in track.midi_items:
@@ -186,10 +187,50 @@ class ReaperProject:
         lines.append("  >\n")
         return lines
 
-    def _generate_reasynth_fx(self) -> list[str]:
-        """Generate an FX chain with ReaSynth for MIDI playback."""
-        # ReaSynth preset data (simple saw wave)
-        # This is a minimal ReaSynth configuration that produces audible sound
+    def _generate_reasynth_fx(self, instrument_type: str = "synth") -> list[str]:
+        """Generate an FX chain with ReaSynth for MIDI playback.
+
+        Different presets for different instrument types:
+        - synth: bright saw wave (default)
+        - bass: low-passed saw, lower octave feel
+        - pad: soft attack, long release
+        - lead: square wave, punchy
+        """
+        # Base64-encoded ReaSynth presets for different sounds
+        # These are minimal configurations - waveform and envelope settings
+        presets = {
+            # Saw wave, medium attack/release - good for chords
+            "synth": (
+                "eXNlcu5e7f4CAAAAAQAAAAAAAAACAAAAAAAAAAIAAAABAAAAAAAAAAIAAAAAAAAAPAAAAAAAAAAAABA\n"
+                "AAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+                "AAAQAAAA\n"
+            ),
+            # Saw wave, slightly darker - for bass
+            "bass": (
+                "eXNlcu5e7f4CAAAAAQAAAAAAAAACAAAAAAAAAAIAAAABAAAAAAAAAAIAAAAAAAAAOAAAAAAAAAAAABA\n"
+                "AAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+                "AAAQAAAA\n"
+            ),
+            # Softer wave, long attack/release - for pads
+            "pad": (
+                "eXNlcu5e7f4CAAAAAQAAAAAAAAACAAAAAAAAAAIAAAABAAAAAAAAAAIAAAAAAAAAPAAAAAAAAAAAADA\n"
+                "AAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+                "AAAQAAAA\n"
+            ),
+            # Square wave - for leads
+            "lead": (
+                "eXNlcu5e7f4CAAAAAQAAAAAAAAACAAAAAAAAAAEAAAABAAAAAAAAAAIAAAAAAAAAPAAAAAAAAAAAABA\n"
+                "AAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+                "AAAQAAAA\n"
+            ),
+        }
+
+        preset_data = presets.get(instrument_type, presets["synth"])
+
         return [
             "    <FXCHAIN\n",
             "      SHOW 0\n",
@@ -197,10 +238,7 @@ class ReaperProject:
             "      DOCKED 0\n",
             "      BYPASS 0 0 0\n",
             "      <VST \"VSTi: ReaSynth (Cockos)\" reasynth.vst.dylib 0 \"\" 1919251321<5653546872736E7265617379>\n",
-            "        eXNlcu5e7f4CAAAAAQAAAAAAAAACAAAAAAAAAAIAAAABAAAAAAAAAAIAAAAAAAAAPAAAAAAAAAAAABA\n",
-            "        AAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n",
-            "        AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n",
-            "        AAAQAAAA\n",
+            f"        {preset_data}",
             "      >\n",
             "      FLOATPOS 0 0 0 0\n",
             "      FXID {" + str(uuid.uuid4()) + "}\n",
@@ -247,9 +285,15 @@ class ReaperProject:
         """Set the render output filename (without extension)."""
         self.render_file = filename
 
-    def add_track(self, name: str) -> Track:
-        """Add a new track to the project."""
-        track = Track(name=name, index=len(self.tracks))
+    def add_track(self, name: str, instrument_type: str = "synth") -> Track:
+        """Add a new track to the project.
+
+        Args:
+            name: Track name
+            instrument_type: Type of instrument - 'synth', 'bass', 'pad', 'lead', 'drums'
+                            Drums tracks won't get an auto-assigned synth.
+        """
+        track = Track(name=name, index=len(self.tracks), instrument_type=instrument_type)
         self.tracks.append(track)
         return track
 

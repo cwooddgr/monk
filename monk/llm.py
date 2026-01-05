@@ -32,6 +32,16 @@ SYSTEM_PROMPT = """You are Monk, an AI music production assistant. You help user
 3. The system automatically renders and plays the audio
 4. User provides feedback, and you iterate
 
+## Instrument Types
+When creating MIDI, specify the appropriate instrument_type:
+- **synth**: Bright saw wave, good for chords and general use (default)
+- **bass**: Darker sound, use for bass lines
+- **pad**: Soft attack, long release, for ambient textures
+- **lead**: Punchy square wave, for melodies
+- **drums**: No synth assigned - MIDI only. User must add drum plugin in Reaper.
+
+Always use instrument_type="bass" for bass lines, "pad" for pads, "lead" for melodies.
+
 ## Musical Reference
 - Note names: C4 = middle C = MIDI note 60
 - Octave numbers: C0=12, C1=24, C2=36, C3=48, C4=60, C5=72, C6=84
@@ -44,7 +54,8 @@ SYSTEM_PROMPT = """You are Monk, an AI music production assistant. You help user
 - When creating melodies, consider the harmonic context
 - Be specific about what you created so the user understands
 - Use appropriate velocities (0-127) for dynamics - 80 is moderate, 100 is strong
-- Create musically coherent progressions and patterns"""
+- Create musically coherent progressions and patterns
+- For drums, remind the user they need to add a drum plugin in Reaper"""
 
 
 # Tool definitions
@@ -89,6 +100,11 @@ TOOLS = [
                     "type": "string",
                     "description": "Name for the track to add this MIDI to",
                 },
+                "instrument_type": {
+                    "type": "string",
+                    "enum": ["synth", "bass", "pad", "lead"],
+                    "description": "Type of synth sound: synth (default, good for chords), bass (darker, for bass lines), pad (soft attack, for ambient), lead (punchy, for melodies)",
+                },
             },
             "required": ["filename", "notes", "track_name"],
         },
@@ -120,13 +136,18 @@ TOOLS = [
                     "type": "string",
                     "description": "Name for the track to add this MIDI to",
                 },
+                "instrument_type": {
+                    "type": "string",
+                    "enum": ["synth", "pad"],
+                    "description": "Type of synth: synth (default, bright) or pad (soft, ambient)",
+                },
             },
             "required": ["filename", "chords", "track_name"],
         },
     },
     {
         "name": "create_drum_pattern",
-        "description": "Create a MIDI drum pattern. Uses General MIDI drum mapping.",
+        "description": "Create a MIDI drum pattern. Uses General MIDI drum mapping. NOTE: Drum tracks require a drum plugin/sampler - no synth is auto-assigned. User must add their own drum instrument in Reaper.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -306,6 +327,7 @@ class MusicLLM:
         filename = input_data["filename"]
         track_name = input_data["track_name"]
         notes_data = input_data["notes"]
+        instrument_type = input_data.get("instrument_type", "synth")
 
         notes = [
             Note(
@@ -320,14 +342,14 @@ class MusicLLM:
         midi_path = self.project.midi_dir / f"{filename}.mid"
         create_midi_file(midi_path, notes, tempo_bpm=int(self.project.rpp.tempo))
 
-        # Find or create track
-        track = self._get_or_create_track(track_name)
+        # Find or create track with appropriate instrument
+        track = self._get_or_create_track(track_name, instrument_type)
         self.project.rpp.add_midi_item(track.index, midi_path)
         self.project.save()
 
         return ToolResult(
             tool="create_midi",
-            summary=f"Created {filename}.mid with {len(notes)} notes on '{track_name}'",
+            summary=f"Created {filename}.mid with {len(notes)} notes on '{track_name}' ({instrument_type})",
             made_changes=True,
         )
 
@@ -338,6 +360,7 @@ class MusicLLM:
         chords = input_data["chords"]
         beats_per_chord = input_data.get("beats_per_chord", 4.0)
         octave = input_data.get("octave", 4)
+        instrument_type = input_data.get("instrument_type", "synth")
 
         midi_path = self.project.midi_dir / f"{filename}.mid"
         create_chord_progression(
@@ -348,14 +371,14 @@ class MusicLLM:
             octave=octave,
         )
 
-        track = self._get_or_create_track(track_name)
+        track = self._get_or_create_track(track_name, instrument_type)
         self.project.rpp.add_midi_item(track.index, midi_path)
         self.project.save()
 
         chord_str = " → ".join(chords)
         return ToolResult(
             tool="create_chord_progression",
-            summary=f"Created {filename}.mid: {chord_str} on '{track_name}'",
+            summary=f"Created {filename}.mid: {chord_str} on '{track_name}' ({instrument_type})",
             made_changes=True,
         )
 
@@ -384,14 +407,15 @@ class MusicLLM:
             tempo_bpm=int(self.project.rpp.tempo),
         )
 
-        track = self._get_or_create_track(track_name)
+        # Drums don't get an auto-assigned synth - user needs to add drum plugin
+        track = self._get_or_create_track(track_name, "drums")
         self.project.rpp.add_midi_item(track.index, midi_path)
         self.project.save()
 
         drum_list = ", ".join(pattern.keys())
         return ToolResult(
             tool="create_drum_pattern",
-            summary=f"Created {filename}.mid: {drum_list} ({bars} bars) on '{track_name}'",
+            summary=f"Created {filename}.mid: {drum_list} ({bars} bars) on '{track_name}' (NOTE: Add a drum plugin in Reaper to hear this)",
             made_changes=True,
         )
 
@@ -429,9 +453,9 @@ class MusicLLM:
             made_changes=True,
         )
 
-    def _get_or_create_track(self, name: str):
+    def _get_or_create_track(self, name: str, instrument_type: str = "synth"):
         """Get an existing track or create a new one."""
         for track in self.project.rpp.tracks:
             if track.name == name:
                 return track
-        return self.project.rpp.add_track(name)
+        return self.project.rpp.add_track(name, instrument_type=instrument_type)
