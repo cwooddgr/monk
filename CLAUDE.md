@@ -72,3 +72,7 @@ The LLM has access to these tools (defined in `llm.py`):
 - `MonkProject` (`project.py`) - Main project manager, handles saving, rendering, conversation history
 - `ReaperProject` (`rpp.py`) - Parses and modifies .rpp files, adds tracks and MIDI items
 - `MusicLLM` (`llm.py`) - Anthropic client wrapper with streaming and tool use loop
+
+## Status
+
+Dormant since the January 2026 MVP (hardcoded to `claude-sonnet-4-20250514`); Reaper is not installed on Charlie's Mac as of 2026-09-30. Ideas for a future pass: `docs/redesign-ideas.md`.
